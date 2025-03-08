@@ -1,0 +1,14 @@
+- bundleName: examplecom-tls
+  commonNames:
+    - '*.example.com'
+    - example.com
+  custodian: devops@example.com
+  usage:
+    - k8s
+- bundleName: exampleio-tls
+  commonNames:
+    - '*.example.io'
+    - example.io
+  custodian: devops@example.com
+  usage:
+    - k8s
