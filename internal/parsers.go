@@ -71,8 +71,6 @@ func ParseFlags() *Config {
 		log.Fatalf("Input path %s does not exist", cfg.InputPath)
 	} else if _, err := os.Stat(cfg.InputPath); err != nil {
 		log.Fatalf("Error accessing input path %s: %v", cfg.InputPath, err)
-	} else {
-		cfg.InputPath = "."
 	}
 	return cfg
 }
