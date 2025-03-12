@@ -56,11 +56,12 @@ type K8sMetadata struct {
 
 // KeyRecord encodes a key and its metadata
 type KeyRecord struct {
-	SubjectKeyIdentifier string `db:"subject_key_identifier"`
-	KeyType              string `db:"key_type"`
-	BitLength            int    `db:"bit_length"`
-	PublicExponent       int    `db:"public_exponent"`
-	Modulus              string `db:"modulus"`
-	Curve                string `db:"curve"`
-	KeyData              []byte `db:"key_data"`
+	SubjectKeyIdentifier       string `db:"subject_key_identifier"`
+	SubjectKeyIdentifierSha256 string `db:"subject_key_identifier_sha256"`
+	KeyType                    string `db:"key_type"`
+	BitLength                  int    `db:"bit_length"`
+	PublicExponent             int    `db:"public_exponent"`
+	Modulus                    string `db:"modulus"`
+	Curve                      string `db:"curve"`
+	KeyData                    []byte `db:"key_data"`
 }

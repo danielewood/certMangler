@@ -438,10 +438,18 @@ func ExportBundles(cfgs []BundleConfig, outDir string, db *DB) error {
 
 	// Process each key record.
 	for _, key := range keys {
-		// Retrieve the matching certificate record by subject key identifier.
+		// Retrieve the matching certificate record by subject key identifier (try both SHA1 and SHA256)
 		cert, err := db.GetCertBySKI(key.SubjectKeyIdentifier)
 		if err != nil || cert == nil {
-			continue
+			// If no match found with SHA1 SKI, try SHA256 SKI if it exists
+			if len(key.SubjectKeyIdentifierSha256) > 0 {
+				cert, err = db.GetCertBySKI(key.SubjectKeyIdentifierSha256)
+				if err != nil || cert == nil {
+					continue
+				}
+			} else {
+				continue
+			}
 		}
 
 		// Build a bundle from the certificate and its corresponding key.

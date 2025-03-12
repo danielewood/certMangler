@@ -98,6 +98,7 @@ func (db *DB) initSchema() error {
 	_, err = db.Exec(`
 		CREATE TABLE IF NOT EXISTS keys (
 			subject_key_identifier TEXT PRIMARY KEY,
+			subject_key_identifier_sha256 TEXT,
 			key_type TEXT,
 			bit_length INTEGER,
 			public_exponent INTEGER,
@@ -115,8 +116,8 @@ func (db *DB) initSchema() error {
 
 func (db *DB) InsertKey(key KeyRecord) error {
 	_, err := db.NamedExec(`
-		INSERT INTO keys (subject_key_identifier, key_type, bit_length, public_exponent, modulus, curve, key_data)
-		VALUES (:subject_key_identifier, :key_type, :bit_length, :public_exponent, :modulus, :curve, :key_data)
+		INSERT INTO keys (subject_key_identifier, subject_key_identifier_sha256, key_type, bit_length, public_exponent, modulus, curve, key_data)
+		VALUES (:subject_key_identifier, :subject_key_identifier_sha256, :key_type, :bit_length, :public_exponent, :modulus, :curve, :key_data)
 	`, key)
 	if err != nil && strings.Contains(err.Error(), "UNIQUE constraint failed") {
 		log.Debugf("Skipping duplicate key: %v", err)
@@ -138,9 +139,9 @@ func (db *DB) InsertCertificate(cert CertificateRecord) error {
 	return err
 }
 
-func (db *DB) GetKey(skid string) (*KeyRecord, error) {
+func (db *DB) GetKey(skid string, skid256 string) (*KeyRecord, error) {
 	var key KeyRecord
-	err := db.Get(&key, "SELECT * FROM keys WHERE subject_key_identifier = ?", skid)
+	err := db.Get(&key, "SELECT * FROM keys WHERE subject_key_identifier = ? OR subject_key_identifier_sha256 = ?", skid, skid256)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return nil, nil // Not an error, just means the key doesn't exist
@@ -229,7 +230,7 @@ func (db *DB) DumpDB() error {
 	// Print keys
 	printHeader("KEYS")
 
-	rows, err = db.Queryx("SELECT subject_key_identifier, key_type FROM keys")
+	rows, err = db.Queryx("SELECT subject_key_identifier, subject_key_identifier_sha256, key_type FROM keys")
 	if err != nil {
 		return fmt.Errorf("failed to query keys: %w", err)
 	}
@@ -241,8 +242,9 @@ func (db *DB) DumpDB() error {
 		if err := rows.StructScan(&key); err != nil {
 			return fmt.Errorf("failed to scan key: %w", err)
 		}
-		log.Debugf("SKI: %s | Type: %s",
+		log.Debugf("SKI: %s | SKI256: %s | Type: %s",
 			key.SubjectKeyIdentifier,
+			key.SubjectKeyIdentifierSha256,
 			strings.ToUpper(key.KeyType))
 		keyCount++
 	}

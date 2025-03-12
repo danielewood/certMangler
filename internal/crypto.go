@@ -7,6 +7,7 @@ import (
 	"crypto/ed25519"
 	"crypto/rsa"
 	"crypto/sha1"
+	"crypto/sha256"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"database/sql"
@@ -71,7 +72,7 @@ func getCertificateType(cert *x509.Certificate) string {
 	return "leaf"
 }
 
-func computeSKIDRawBits(pub crypto.PublicKey) ([]byte, error) {
+func computeSKIDRawBits(pub crypto.PublicKey, sumType ...string) ([]byte, error) {
 	der, err := x509.MarshalPKIXPublicKey(pub)
 	if err != nil {
 		return nil, fmt.Errorf("marshal PKIX: %v", err)
@@ -82,20 +83,26 @@ func computeSKIDRawBits(pub crypto.PublicKey) ([]byte, error) {
 		return nil, fmt.Errorf("unmarshal SPKI: %v", err)
 	}
 
-	sum := sha1.Sum(spki.SubjectPublicKey.Bytes)
-	return sum[:], nil
+	hashType := "sha1"
+	if len(sumType) > 0 && sumType[0] != "" {
+		hashType = sumType[0]
+	}
+
+	switch hashType {
+	case "sha1":
+		sum := sha1.Sum(spki.SubjectPublicKey.Bytes)
+		return sum[:], nil
+	case "sha256":
+		sum := sha256.Sum256(spki.SubjectPublicKey.Bytes)
+		// Yes, first 40 characters, I think its dumb too
+		return sum[:20], nil
+	default:
+		return nil, fmt.Errorf("unsupported hash type: %s", hashType)
+	}
 }
 
 func isPEM(data []byte) bool {
 	return bytes.Contains(data, []byte("-----BEGIN"))
-}
-
-func isDER(data []byte) bool {
-	// Check for DER sequence tag (0x30)
-	// The second byte can vary - it's the length encoding
-	// 0x80-0x82 are indefinite length and long form length encodings
-	// 0x00-0x7F are short form length encodings
-	return len(data) > 2 && data[0] == 0x30
 }
 
 func parsePrivateKey(data []byte, passwords []string) (crypto.PrivateKey, error) {
@@ -199,26 +206,36 @@ func processPEM(data []byte, path string, cfg *Config) {
 
 	if csr, err := helpers.ParseCSRPEM(data); err == nil && csr != nil {
 		skid := "N/A"
+		skid256 := "N/A"
 		if pub := csr.PublicKey; pub != nil {
 			if rawSKID, err := computeSKIDRawBits(pub); err == nil {
 				skid = hex.EncodeToString(rawSKID)
 			} else {
 				log.Debugf("computeSKIDRawBits error on %s (CSR): %v", path, err)
 			}
+			if rawSKID, err := computeSKIDRawBits(pub, "sha256"); err == nil {
+				skid256 = hex.EncodeToString(rawSKID)
+			} else {
+				log.Debugf("computeSKIDRawBits error on %s (CSR): %v", path, err)
+			}
 		}
-		log.Infof("%s, csr, %s", path, skid)
+		log.Infof("%s, csr, sha1:%s, sha256:%s", path, skid, skid256)
 		return
 	}
 
 	if key, err := parsePrivateKey(data, cfg.Passwords); err == nil && key != nil {
 		skid := "N/A"
+		skid256 := "N/A"
 		if pub, err := getPublicKey(key); err == nil {
 			log.Debugf("Got public key of type: %T", pub)
 			if rawSKID, err := computeSKIDRawBits(pub); err == nil {
 				skid = hex.EncodeToString(rawSKID)
+				rawSKID256, _ := computeSKIDRawBits(pub, "sha256")
+				skid256 = hex.EncodeToString(rawSKID256)
 				keyRecord := KeyRecord{
-					SubjectKeyIdentifier: skid,
-					KeyData:              data,
+					SubjectKeyIdentifier:       skid,
+					SubjectKeyIdentifierSha256: skid256,
+					KeyData:                    data,
 				}
 				if rsaKey, ok := key.(*rsa.PrivateKey); ok {
 					keyRecord.KeyType = "rsa"
