@@ -69,18 +69,18 @@ func NewDB(dbPath string) (*DB, error) {
 func (db *DB) initSchema() error {
 	_, err := db.Exec(`
 		CREATE TABLE IF NOT EXISTS certificates (
+			expiry                   timestamp,
+			not_before              timestamp,
+			common_name             text,
+			sans                    text,
+			subject_key_identifier  text NOT NULL,
+			key_type                text NOT NULL,
+			pem                     blob NOT NULL,
 			serial_number            blob NOT NULL,
 			authority_key_identifier blob NOT NULL,
 			cert_type               text NOT NULL,
-			key_type                text NOT NULL,
-			expiry                   timestamp,
-			not_before              timestamp,
 			metadata                text,
-			sans                    text,
-			common_name             text,
 			bundle_name             text NOT NULL,
-			subject_key_identifier  text NOT NULL,
-			pem                     blob NOT NULL,
 			PRIMARY KEY(serial_number, authority_key_identifier, subject_key_identifier)
 		);
 	`)

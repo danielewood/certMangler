@@ -178,13 +178,17 @@ func processPEM(data []byte, path string, cfg *Config) {
 			// Determine bundle name from configuration
 			bundleName := determineBundleName(cert.Subject.CommonName, cfg.BundleConfigs)
 			log.Debugf("Determined bundle name %s for certificate CN=%s", bundleName, cert.Subject.CommonName)
+			PEM := pem.EncodeToMemory(&pem.Block{
+				Type:  "CERTIFICATE",
+				Bytes: cert.Raw,
+			})
 
 			certRecord := CertificateRecord{
 				Serial:               cert.SerialNumber.String(),
 				AKI:                  hex.EncodeToString(aki),
 				Type:                 getCertificateType(cert),
 				KeyType:              getKeyType(cert),
-				PEM:                  string(data),
+				PEM:                  string(PEM),
 				SubjectKeyIdentifier: hex.EncodeToString(cert.SubjectKeyId),
 				NotBefore:            &cert.NotBefore,
 				Expiry:               cert.NotAfter,
@@ -199,21 +203,17 @@ func processPEM(data []byte, path string, cfg *Config) {
 				log.Debugf("Inserted certificate %s with SKID %s into database", cert.SerialNumber.String(), skid)
 			}
 
-			log.Infof("%s, certificate, %s", path, skid)
+			log.Infof("%s, certificate, sha:%s", path, skid)
 		}
 		return
 	}
 
 	if csr, err := helpers.ParseCSRPEM(data); err == nil && csr != nil {
-		skid := "N/A"
-		skid256 := "N/A"
+		skid, skid256 := "N/A", "N/A"
+
 		if pub := csr.PublicKey; pub != nil {
 			if rawSKID, err := computeSKIDRawBits(pub); err == nil {
 				skid = hex.EncodeToString(rawSKID)
-			} else {
-				log.Debugf("computeSKIDRawBits error on %s (CSR): %v", path, err)
-			}
-			if rawSKID, err := computeSKIDRawBits(pub, "sha256"); err == nil {
 				skid256 = hex.EncodeToString(rawSKID)
 			} else {
 				log.Debugf("computeSKIDRawBits error on %s (CSR): %v", path, err)
@@ -238,15 +238,29 @@ func processPEM(data []byte, path string, cfg *Config) {
 					KeyData:                    data,
 				}
 				if rsaKey, ok := key.(*rsa.PrivateKey); ok {
+					keyRecord.KeyData = pem.EncodeToMemory(&pem.Block{
+						Type:  "RSA PRIVATE KEY",
+						Bytes: x509.MarshalPKCS1PrivateKey(rsaKey),
+					})
 					keyRecord.KeyType = "rsa"
 					keyRecord.BitLength = rsaKey.N.BitLen()
 					keyRecord.PublicExponent = rsaKey.E
 					keyRecord.Modulus = rsaKey.N.String()
 				} else if ecdsaKey, ok := key.(*ecdsa.PrivateKey); ok {
+					keyBytes, _ := x509.MarshalECPrivateKey(ecdsaKey)
+					keyRecord.KeyData = pem.EncodeToMemory(&pem.Block{
+						Type:  "EC PRIVATE KEY",
+						Bytes: keyBytes,
+					})
 					keyRecord.KeyType = "ecdsa"
 					keyRecord.Curve = ecdsaKey.Curve.Params().Name
 					keyRecord.BitLength = ecdsaKey.Curve.Params().BitSize
 				} else if ed25519Key, ok := key.(ed25519.PrivateKey); ok {
+					keyBytes, _ := x509.MarshalPKCS8PrivateKey(ed25519Key)
+					keyRecord.KeyData = pem.EncodeToMemory(&pem.Block{
+						Type:  "PRIVATE KEY",
+						Bytes: keyBytes,
+					})
 					keyRecord.KeyType = "ed25519"
 					keyRecord.BitLength = len(ed25519Key) * 8
 				}
@@ -263,7 +277,7 @@ func processPEM(data []byte, path string, cfg *Config) {
 		} else {
 			log.Debugf("getPublicKey error on %s: %v", path, err)
 		}
-		log.Infof("%s, private key, %s", path, skid)
+		log.Infof("%s, private key, sha1:%s, sha256:%s", path, skid, skid256)
 		return
 	}
 
