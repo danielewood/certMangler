@@ -35,7 +35,7 @@ func ParseFlags() *Config {
 	flag.StringVar(&cfg.PasswordFile, "password-file", "", "File containing passwords (one per line)")
 	flag.StringVar(&cfg.PasswordList, "passwords", "", "Comma-separated list of passwords")
 	flag.BoolVar(&cfg.ExportBundles, "export", false, "Export certificate bundles")
-	flag.BoolVar(&cfg.ForceExport, "force", false, "Export expired and untrusted certificate bundles")
+	flag.BoolVar(&cfg.ForceExport, "force", false, "Export untrusted certificate bundles")
 	flag.StringVar(&cfg.OutDir, "out", "./bundles", "Directory to write exported bundles")
 	flag.StringVar(&cfg.DBPath, "dbpath", "", "Path to SQLite database file (leave empty for in-memory)")
 	flag.Parse()
