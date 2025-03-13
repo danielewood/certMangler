@@ -50,7 +50,7 @@ func main() {
 			log.Fatalf("Failed to create output directory %s: %v", cfg.OutDir, err)
 		}
 
-		if err := internal.ExportBundles(cfgs, cfg.OutDir, cfg.DB); err != nil {
+		if err := internal.ExportBundles(cfgs, cfg.OutDir, cfg.DB, cfg.ForceExport); err != nil {
 			log.Fatalf("Failed to export bundles: %v", err)
 		}
 

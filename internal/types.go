@@ -17,6 +17,7 @@ type Config struct {
 	IsStdinSet        bool
 	DB                *DB
 	ExportBundles     bool
+	ForceExport       bool
 	BundlesConfigPath string
 	BundleConfigs     []BundleConfig
 	OutDir            string

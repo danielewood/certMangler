@@ -423,7 +423,7 @@ func formatKeyAlgorithm(pub interface{}) string {
 // the bundle files into a folder. If multiple certificates share the same BundleName,
 // only the newest certificate (by NotBefore) gets the bare bundle name; all others have
 // their serial appended.
-func ExportBundles(cfgs []BundleConfig, outDir string, db *DB) error {
+func ExportBundles(cfgs []BundleConfig, outDir string, db *DB, forceBundle bool) error {
 	// Create a new bundler instance (passing empty strings for CA/intermediate bundle file paths).
 	bundlerInstance, err := bundler.NewBundler("", "")
 	if err != nil {
@@ -452,8 +452,11 @@ func ExportBundles(cfgs []BundleConfig, outDir string, db *DB) error {
 			}
 		}
 
-		// Build a bundle from the certificate and its corresponding key.
-		bundle, err := bundlerInstance.BundleFromPEMorDER([]byte(cert.PEM), key.KeyData, "optimal", "")
+		var bundleOpt bundler.BundleFlavor = "optimal"
+		if forceBundle {
+			bundleOpt = "force"
+		}
+		bundle, err := bundlerInstance.BundleFromPEMorDER([]byte(cert.PEM), key.KeyData, bundleOpt, "")
 		if err != nil {
 			log.Warningf("Failed to bundle cert %s: %v", cert.Serial, err)
 			continue
