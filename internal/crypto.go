@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/cloudflare/cfssl/helpers"
@@ -139,6 +140,7 @@ func parsePrivateKey(data []byte, passwords []string) (crypto.PrivateKey, error)
 }
 
 func processPEM(data []byte, path string, cfg *Config) {
+	// Try parsing as certificates first
 	if certs, err := helpers.ParseCertificatesPEM(data); err == nil && len(certs) > 0 {
 		for _, cert := range certs {
 			skid := "N/A"
@@ -208,6 +210,7 @@ func processPEM(data []byte, path string, cfg *Config) {
 		return
 	}
 
+	// Try parsing as CSR
 	if csr, err := helpers.ParseCSRPEM(data); err == nil && csr != nil {
 		skid, skid256 := "N/A", "N/A"
 
@@ -223,65 +226,86 @@ func processPEM(data []byte, path string, cfg *Config) {
 		return
 	}
 
-	if key, err := parsePrivateKey(data, cfg.Passwords); err == nil && key != nil {
-		skid := "N/A"
-		skid256 := "N/A"
-		if pub, err := getPublicKey(key); err == nil {
-			log.Debugf("Got public key of type: %T", pub)
-			if rawSKID, err := computeSKIDRawBits(pub); err == nil {
-				skid = hex.EncodeToString(rawSKID)
-				rawSKID256, _ := computeSKIDRawBits(pub, "sha256")
-				skid256 = hex.EncodeToString(rawSKID256)
-				keyRecord := KeyRecord{
-					SubjectKeyIdentifier:       skid,
-					SubjectKeyIdentifierSha256: skid256,
-					KeyData:                    data,
-				}
-				if rsaKey, ok := key.(*rsa.PrivateKey); ok {
-					keyRecord.KeyData = pem.EncodeToMemory(&pem.Block{
-						Type:  "RSA PRIVATE KEY",
-						Bytes: x509.MarshalPKCS1PrivateKey(rsaKey),
-					})
-					keyRecord.KeyType = "rsa"
-					keyRecord.BitLength = rsaKey.N.BitLen()
-					keyRecord.PublicExponent = rsaKey.E
-					keyRecord.Modulus = rsaKey.N.String()
-				} else if ecdsaKey, ok := key.(*ecdsa.PrivateKey); ok {
-					keyBytes, _ := x509.MarshalECPrivateKey(ecdsaKey)
-					keyRecord.KeyData = pem.EncodeToMemory(&pem.Block{
-						Type:  "EC PRIVATE KEY",
-						Bytes: keyBytes,
-					})
-					keyRecord.KeyType = "ecdsa"
-					keyRecord.Curve = ecdsaKey.Curve.Params().Name
-					keyRecord.BitLength = ecdsaKey.Curve.Params().BitSize
-				} else if ed25519Key, ok := key.(ed25519.PrivateKey); ok {
-					keyBytes, _ := x509.MarshalPKCS8PrivateKey(ed25519Key)
-					keyRecord.KeyData = pem.EncodeToMemory(&pem.Block{
-						Type:  "PRIVATE KEY",
-						Bytes: keyBytes,
-					})
-					keyRecord.KeyType = "ed25519"
-					keyRecord.BitLength = len(ed25519Key) * 8
-				}
-
-				if err := cfg.DB.InsertKey(keyRecord); err != nil {
-					log.Warningf("Failed to insert key into database: %v", err)
-				} else {
-					log.Debugf("Inserted key with SKID %s into database", skid)
-				}
-
-			} else {
-				log.Debugf("computeSKIDRawBits error on %s (private key): %v", path, err)
-			}
-		} else {
-			log.Debugf("getPublicKey error on %s: %v", path, err)
+	// Process all PEM blocks for private keys
+	var rest []byte = data
+	for len(rest) > 0 {
+		var block *pem.Block
+		block, rest = pem.Decode(rest)
+		if block == nil {
+			log.Debugf("No more valid PEM blocks found in %s", path)
+			break
 		}
-		log.Infof("%s, private key, sha1:%s, sha256:%s", path, skid, skid256)
-		return
+
+		// Skip non-private key blocks
+		if !strings.Contains(block.Type, "PRIVATE KEY") && block.Type != "RSA PRIVATE KEY" && block.Type != "EC PRIVATE KEY" {
+			continue
+		}
+
+		// Encode the block back to PEM for processing
+		pemData := pem.EncodeToMemory(block)
+		if key, err := parsePrivateKey(pemData, cfg.Passwords); err == nil && key != nil {
+			skid := "N/A"
+			skid256 := "N/A"
+			if pub, err := getPublicKey(key); err == nil {
+				log.Debugf("Got public key of type: %T", pub)
+				if rawSKID, err := computeSKIDRawBits(pub); err == nil {
+					skid = hex.EncodeToString(rawSKID)
+					rawSKID256, _ := computeSKIDRawBits(pub, "sha256")
+					skid256 = hex.EncodeToString(rawSKID256)
+					keyRecord := KeyRecord{
+						SubjectKeyIdentifier:       skid,
+						SubjectKeyIdentifierSha256: skid256,
+						KeyData:                    pemData,
+					}
+					if rsaKey, ok := key.(*rsa.PrivateKey); ok {
+						keyRecord.KeyData = pem.EncodeToMemory(&pem.Block{
+							Type:  "RSA PRIVATE KEY",
+							Bytes: x509.MarshalPKCS1PrivateKey(rsaKey),
+						})
+						keyRecord.KeyType = "rsa"
+						keyRecord.BitLength = rsaKey.N.BitLen()
+						keyRecord.PublicExponent = rsaKey.E
+						keyRecord.Modulus = rsaKey.N.String()
+					} else if ecdsaKey, ok := key.(*ecdsa.PrivateKey); ok {
+						keyBytes, _ := x509.MarshalECPrivateKey(ecdsaKey)
+						keyRecord.KeyData = pem.EncodeToMemory(&pem.Block{
+							Type:  "EC PRIVATE KEY",
+							Bytes: keyBytes,
+						})
+						keyRecord.KeyType = "ecdsa"
+						keyRecord.Curve = ecdsaKey.Curve.Params().Name
+						keyRecord.BitLength = ecdsaKey.Curve.Params().BitSize
+					} else if ed25519Key, ok := key.(ed25519.PrivateKey); ok {
+						keyBytes, _ := x509.MarshalPKCS8PrivateKey(ed25519Key)
+						keyRecord.KeyData = pem.EncodeToMemory(&pem.Block{
+							Type:  "PRIVATE KEY",
+							Bytes: keyBytes,
+						})
+						keyRecord.KeyType = "ed25519"
+						keyRecord.BitLength = len(ed25519Key) * 8
+					}
+
+					if err := cfg.DB.InsertKey(keyRecord); err != nil {
+						log.Warningf("Failed to insert key into database: %v", err)
+					} else {
+						log.Debugf("Inserted key with SKID %s into database", skid)
+					}
+
+				} else {
+					log.Debugf("computeSKIDRawBits error on %s (private key): %v", path, err)
+				}
+			} else {
+				log.Debugf("getPublicKey error on %s: %v", path, err)
+			}
+			log.Infof("%s, private key, sha1:%s, sha256:%s", path, skid, skid256)
+		} else {
+			log.Debugf("Failed to parse private key from PEM block in %s: %v", path, err)
+		}
 	}
 
-	log.Debugf("Unrecognized PEM format in %s", path)
+	if len(rest) == len(data) {
+		log.Debugf("Unrecognized PEM format in %s", path)
+	}
 }
 
 func processDER(data []byte, path string, cfg *Config) {

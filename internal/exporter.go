@@ -2,7 +2,6 @@ package internal
 
 import (
 	"bytes"
-	"crypto"
 	"crypto/ecdsa"
 	"crypto/ed25519"
 	"crypto/rsa"
@@ -112,11 +111,7 @@ func writeBundleFiles(outDir, bundleFolder string, cert *CertificateRecord, key 
 	certs = append(certs, bundle.Chain...)
 
 	// Create PKCS#12 data with password "changeit"
-	signer, ok := privKey.(crypto.Signer)
-	if !ok {
-		return fmt.Errorf("failed to convert private key to signer")
-	}
-	p12Data, err := pkcs12.LegacyRC2.Encode(signer, bundle.Cert, certs[1:], "changeit")
+	p12Data, err := pkcs12.LegacyRC2.Encode(privKey, bundle.Cert, certs[1:], "changeit")
 	if err != nil {
 		return fmt.Errorf("failed to create P12: %v", err)
 	}
@@ -253,14 +248,6 @@ func generateJSON(cert *CertificateRecord, key *KeyRecord, bundle *bundler.Bundl
 		"subject_key_id":   subjectKeyID,
 	}
 	return json.MarshalIndent(out, "", "  ")
-}
-
-func buildFullchainPEM(cert *CertificateRecord, chain []*x509.Certificate) []byte {
-	fullchain := []byte(cert.PEM)
-	for _, c := range chain {
-		fullchain = append(fullchain, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: c.Raw})...)
-	}
-	return fullchain
 }
 
 // generateYAML creates a YAML representation of the certificate bundle.
@@ -456,16 +443,9 @@ func ExportBundles(cfgs []BundleConfig, outDir string, db *DB, forceBundle bool)
 		if forceBundle {
 			bundleOpt = "force"
 		}
-		bundle, err := bundlerInstance.BundleFromPEMorDER([]byte(cert.PEM), key.KeyData, bundleOpt, "")
-		if err != nil {
-			log.Warningf("Failed to bundle cert %s: %v", cert.Serial, err)
-			continue
-		}
 
 		// Determine the base bundle name from configuration
 		bundleName := determineBundleName(cert.CommonName.String, cfgs)
-		// Start with the base bundle name
-		bundleFolder := cert.Serial
 
 		// If we have a configured bundle name, process all certificates for this BundleName.
 		if bundleName != "" {
@@ -477,9 +457,16 @@ func ExportBundles(cfgs []BundleConfig, outDir string, db *DB, forceBundle bool)
 				log.Errorf("Failed to retrieve certificates for bundle name %s: %v", bundleName, err)
 				continue
 			}
+			// print bundleName, serial, and expiry
+			log.Debugf("Found %d certificates for bundle name %s", len(certs), bundleName)
+			for _, cert := range certs {
+				log.Debugf("  %s (serial: %s, expiry: %s)", cert.CommonName.String, cert.Serial, cert.Expiry.Format(time.RFC3339))
+			}
 
 			// Iterate through all certificates for this BundleName
 			for i, bundleCert := range certs {
+				// Start with the base bundle name
+				bundleFolder := ""
 				// Determine the folder name
 				if i == 0 {
 					// The newest certificate gets the base bundle name
@@ -491,6 +478,12 @@ func ExportBundles(cfgs []BundleConfig, outDir string, db *DB, forceBundle bool)
 					// Construct the suffix with expiration date and serial number
 					bundleFolder = fmt.Sprintf("%s_%s_%s", bundleName, expirationDate, bundleCert.Serial)
 					log.Debugf("Using %s for older certificate (newest is %s, CN=%s)", bundleFolder, certs[0].Serial, cert.CommonName.String)
+				}
+
+				bundle, err := bundlerInstance.BundleFromPEMorDER([]byte(bundleCert.PEM), key.KeyData, bundleOpt, "")
+				if err != nil {
+					log.Warningf("Failed to bundle cert %s: %v", bundleCert.Serial, err)
+					continue
 				}
 
 				// Create the bundle folder
@@ -506,56 +499,11 @@ func ExportBundles(cfgs []BundleConfig, outDir string, db *DB, forceBundle bool)
 					continue
 				}
 				log.Infof("Exported bundle for %s into folder %s/%s", bundleCert.CommonName.String, outDir, bundleFolder)
+				log.Debugf("  %s (serial: %s, expiry: %s)", bundleCert.CommonName.String, bundleCert.Serial, bundleCert.Expiry.Format(time.RFC3339))
 			}
 			continue
 		}
-
-		// If we have a configured bundle name, check for duplicates
-		if bundleName != "" {
-			// First check if there are multiple certificates with this bundle name
-			var count int
-			err = db.Get(&count, "SELECT COUNT(*) FROM certificates WHERE bundle_name = ?", bundleName)
-			if err == nil && count > 1 {
-				log.Debugf("Found %d certificates for bundle name %s", count, bundleName)
-
-				// Only if we have multiple certificates, determine the newest
-				var certs []CertificateRecord
-				err = db.Select(&certs,
-					"SELECT * FROM certificates WHERE bundle_name = ? ORDER BY not_before DESC",
-					bundleName)
-				if err == nil && len(certs) > 0 {
-					// If this isn't the newest certificate (first in the ordered list)
-					if certs[0].Serial != cert.Serial {
-						// Append the serial to make the folder name unique
-						bundleFolder = bundleName + "_" + cert.Serial
-						log.Debugf("Using %s for older certificate (newest is %s, CN=%s)",
-							bundleFolder, certs[0].Serial, cert.CommonName.String)
-					} else {
-						log.Debugf("Using base name %s for newest certificate (CN=%s)",
-							bundleFolder, cert.CommonName.String)
-					}
-				}
-			}
-		}
-
-		// Create the bundle folder using the potentially modified bundleFolder name
-		// (will include serial number for older certificates)
-		folderPath := filepath.Join(outDir, bundleFolder)
-		if err := os.MkdirAll(folderPath, 0755); err != nil {
-			log.Errorf("Failed to create output directory %s: %v", folderPath, err)
-			continue
-		}
-
-		// Write all bundle files into the folder.
-		if err := writeBundleFiles(outDir, bundleFolder, cert, &key, bundle); err != nil {
-			log.Warningf("Failed to write bundle files for cert %s: %v", cert.Serial, err)
-			continue
-		}
-
-		// Display the result using the certificate's CommonName.
-		log.Infof("Exported bundle for %s into folder %s/%s", cert.CommonName.String, outDir, bundleFolder)
 	}
-
 	return nil
 }
 
