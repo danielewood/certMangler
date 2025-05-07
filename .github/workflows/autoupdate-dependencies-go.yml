@@ -15,12 +15,12 @@ jobs:
 
     steps:    
     - name: Checkout the head commit of the branch
-      uses: actions/checkout@v2
+      uses: actions/checkout@v4
       with:
         persist-credentials: false
           
     - name: Go setup
-      uses: actions/setup-go@v2
+      uses: actions/setup-go@v5
              
     - name: Run auto dependency update 
       uses: romoh/dependencies-autoupdate@main
