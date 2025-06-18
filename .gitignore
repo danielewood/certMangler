@@ -17,5 +17,7 @@ bundles/
 
 
 .aider*
-
+.DS_Store
+.idea/
+.vscode/
 
