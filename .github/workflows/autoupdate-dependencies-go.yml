@@ -52,7 +52,6 @@ jobs:
           dependencies
         assignees: danielewood
         reviewers: danielewood
-        milestone: 1
         draft: false
         branch: dependency-bump
         delete-branch: true
