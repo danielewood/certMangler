@@ -48,8 +48,6 @@ jobs:
         title: 'chore: Update Dependencies'
         body: |
           Updated to latest go dependencies.
-        labels: |
-          dependencies
         assignees: danielewood
         reviewers: danielewood
         draft: false
