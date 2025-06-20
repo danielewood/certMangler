@@ -39,7 +39,7 @@ jobs:
       run: go build ./...
     - name: Create Pull Request
       id: cpr
-      uses: ./
+      uses: peter-evans/create-pull-request@v7.0.8
       with:
         commit-message: Update report
         committer: github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>
