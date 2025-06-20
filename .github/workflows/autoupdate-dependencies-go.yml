@@ -42,13 +42,13 @@ jobs:
       run: |
         echo "## Changes Summary" > changes.md
         echo "" >> changes.md
-        if git diff --name-only HEAD~1 | grep -q .; then
+        if git diff --name-only | grep -q .; then
           echo "### Modified files:" >> changes.md
-          git diff --name-only HEAD~1 | sed 's/^/- /' >> changes.md
+          git diff --name-only | sed 's/^/- /' >> changes.md
           echo "" >> changes.md
           echo "### Dependency changes:" >> changes.md
-          if git diff HEAD~1 go.mod | grep -E '^[+-]' | grep -v '^[+-]{3}' | grep -v '^[+-]module' | grep -v '^[+-]go ' > /dev/null; then
-            git diff HEAD~1 go.mod | grep -E '^[+-]' | grep -v '^[+-]{3}' | grep -v '^[+-]module' | grep -v '^[+-]go ' >> changes.md
+          if git diff go.mod | grep -E '^[+-]' | grep -v '^[+-]{3}' | grep -v '^[+-]module' | grep -v '^[+-]go ' > /dev/null; then
+            git diff go.mod | grep -E '^[+-]' | grep -v '^[+-]{3}' | grep -v '^[+-]module' | grep -v '^[+-]go ' >> changes.md
           else
             echo "- No dependency changes detected" >> changes.md
           fi
