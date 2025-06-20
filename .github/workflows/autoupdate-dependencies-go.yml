@@ -48,7 +48,9 @@ jobs:
           echo "" >> changes.md
           echo "### Dependency changes:" >> changes.md
           if git diff go.mod | grep -E '^[+-]' | grep -v '^[+-]{3}' | grep -v '^[+-]module' | grep -v '^[+-]go ' > /dev/null; then
+            echo '```diff' >> changes.md
             git diff go.mod | grep -E '^[+-]' | grep -v '^[+-]{3}' | grep -v '^[+-]module' | grep -v '^[+-]go ' >> changes.md
+            echo '```' >> changes.md
           else
             echo "- No dependency changes detected" >> changes.md
           fi
